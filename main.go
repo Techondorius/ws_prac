@@ -10,6 +10,7 @@ import (
 	"net/http"
 )
 
+
 func main() {
 	// DBマイグレーション
 	// model.Connectionがエラー発生しなくなるまで=DBが立ち上がるまで待機

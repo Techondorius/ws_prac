@@ -51,7 +51,12 @@ func main() {
 
 	r.GET("/createRoom/:id", func(c *gin.Context) {
 		id := c.Param("id")
-		rms[id] = clients{}
+		if _, existBool := rms[id]; existBool {
+			c.JSON(400, gin.H{"message": "Room already exists"})
+		} else {
+			rms[id] = clients{}
+			c.JSON(http.StatusOK, gin.H{"message": "Room Created!"})
+		}
 	})
 
 	r.GET("/ws/:id", func(c *gin.Context) {
@@ -87,6 +92,7 @@ func wshandler(w http.ResponseWriter, r *http.Request, id string) {
 		},
 	}
 	conn, err := wsupgrader.Upgrade(w, r, nil)
+	defer conn.Close()
 
 	if err != nil {
 		log.Println("Failed to set websocket upgrade")

@@ -3,13 +3,20 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
+type clients map[*websocket.Conn]bool
+
+type rooms map[string](clients)
+
+var rms rooms
 
 func main() {
 	// DBマイグレーション
@@ -22,6 +29,7 @@ func main() {
 	//	_, dbConErr = model.Connection()
 	//}
 	//migration.Mig()
+	rms = rooms{}
 
 	r := gin.Default()
 
@@ -41,6 +49,16 @@ func main() {
 		})
 	})
 
+	r.GET("/createRoom/:id", func(c *gin.Context) {
+		id := c.Param("id")
+		rms[id] = clients{}
+	})
+
+	r.GET("/ws/:id", func(c *gin.Context) {
+		id := c.Param("id")
+		wshandler(c.Writer, c.Request, id)
+	})
+
 	_ = r.Run()
 }
 
@@ -56,5 +74,55 @@ func logger() gin.HandlerFunc {
 		log.Println("Query Params: " + string(j))
 
 		c.Next()
+	}
+}
+
+func wshandler(w http.ResponseWriter, r *http.Request, id string) {
+	var wsupgrader = websocket.Upgrader{
+		HandshakeTimeout: 0,
+		ReadBufferSize:   1024,
+		WriteBufferSize:  1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+	conn, err := wsupgrader.Upgrade(w, r, nil)
+
+	if err != nil {
+		log.Println("Failed to set websocket upgrade")
+		return
+	}
+	rms[id][conn] = true
+	// defer conn.Close()
+
+	for {
+		var msg message
+		err := conn.ReadJSON(&msg)
+		log.Println(msg.Str)
+		if err != nil {
+			if websocket.IsCloseError(err, 1005) {
+				rms[id][conn] = false
+				log.Printf("Disconnected")
+			}
+			log.Println("!!!")
+			log.Println(err)
+			return
+		}
+		wsWriter(msg, id)
+	}
+}
+
+type message struct {
+	Str string `json:"str"`
+}
+
+func wsWriter(res message, id string) {
+	for client, tf := range rms[id] {
+		if tf {
+			if err := client.WriteJSON(res); err != nil {
+				log.Println("error!!!")
+				log.Println(err)
+			}
+		}
 	}
 }
